@@ -116,7 +116,7 @@ class Daemon(object):
             nonlocal last_error_log, retry
             now = time.time()
             if now - last_error_log > 60:
-                last_error_time = now
+                last_error_log = now
                 self.logger.error(f'{error}  Retrying occasionally...')
             if retry == self.max_retry and self.failover():
                 retry = 0
@@ -445,3 +445,15 @@ class DecredDaemon(Daemon):
         # FIXME allow self signed certificates
         connector = aiohttp.TCPConnector(verify_ssl=False)
         return aiohttp.ClientSession(connector=connector)
+
+
+class PreLegacyRPCDaemon(LegacyRPCDaemon):
+    '''Handles connections to a daemon at the given URL.
+
+    This class is useful for daemons that don't have the new 'getblock'
+    RPC call that returns the block in hex, and need the False parameter
+    for the getblock'''
+
+    async def deserialised_block(self, hex_hash):
+        '''Return the deserialised block with the given hex hash.'''
+        return await self._send_single('getblock', (hex_hash, False))

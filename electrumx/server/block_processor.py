@@ -44,6 +44,7 @@ class Prefetcher(object):
         self.min_cache_size = 10 * 1024 * 1024
         # This makes the first fetch be 10 blocks
         self.ave_size = self.min_cache_size // 10
+        self.polling_delay = 5
 
     async def main_loop(self, bp_height):
         '''Loop forever polling for more blocks.'''
@@ -53,7 +54,7 @@ class Prefetcher(object):
                 # Sleep a while if there is nothing to prefetch
                 await self.refill_event.wait()
                 if not await self._prefetch_blocks():
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(self.polling_delay)
             except DaemonError as e:
                 self.logger.info(f'ignoring daemon error: {e}')
 
@@ -631,8 +632,6 @@ class BlockProcessor(object):
         if first_sync:
             self.logger.info(f'{electrumx.version} synced to '
                              f'height {self.height:,d}')
-        # Initialise the notification framework
-        await self.notifications.on_block(set(), self.height)
         # Reopen for serving
         await self.db.open_for_serving()
 
@@ -687,3 +686,33 @@ class DecredBlockProcessor(BlockProcessor):
             start -= 1
             count += 1
         return start, count
+
+
+class NamecoinBlockProcessor(BlockProcessor):
+    def advance_txs(self, txs):
+        result = super().advance_txs(txs)
+
+        tx_num = self.tx_count - len(txs)
+        script_name_hashX = self.coin.name_hashX_from_script
+        update_touched = self.touched.update
+        hashXs_by_tx = []
+        append_hashXs = hashXs_by_tx.append
+
+        for tx, tx_hash in txs:
+            hashXs = []
+            append_hashX = hashXs.append
+
+            # Add the new UTXOs and associate them with the name script
+            for idx, txout in enumerate(tx.outputs):
+                # Get the hashX of the name script.  Ignore non-name scripts.
+                hashX = script_name_hashX(txout.pk_script)
+                if hashX:
+                    append_hashX(hashX)
+
+            append_hashXs(hashXs)
+            update_touched(hashXs)
+            tx_num += 1
+
+        self.db.history.add_unflushed(hashXs_by_tx, self.tx_count - len(txs))
+
+        return result

@@ -40,7 +40,7 @@ import base64
 
 import electrumx.lib.util as util
 from electrumx.lib.hash import Base58, hash160, double_sha256, hash_to_hex_str
-from electrumx.lib.hash import HASHX_LEN
+from electrumx.lib.hash import HASHX_LEN, hex_str_to_hash
 from electrumx.lib.script import ScriptPubKey, OpCodes
 import electrumx.lib.tx as lib_tx
 import electrumx.server.block_processor as block_proc
@@ -709,6 +709,109 @@ class Namecoin(AuxPowMixin, Coin):
     PEERS = [
         'elec.luggs.co s446',
     ]
+    BLOCK_PROCESSOR = block_proc.NamecoinBlockProcessor
+
+    @classmethod
+    def split_name_script(cls, script):
+        from electrumx.lib.script import _match_ops, Script, ScriptError
+
+        try:
+            ops = Script.get_ops(script)
+        except ScriptError:
+            return None, script
+
+        match = _match_ops
+
+        # Name opcodes
+        OP_NAME_NEW = OpCodes.OP_1
+        OP_NAME_FIRSTUPDATE = OpCodes.OP_2
+        OP_NAME_UPDATE = OpCodes.OP_3
+
+        # Opcode sequences for name operations
+        NAME_NEW_OPS = [OP_NAME_NEW, -1, OpCodes.OP_2DROP]
+        NAME_FIRSTUPDATE_OPS = [OP_NAME_FIRSTUPDATE, -1, -1, -1,
+                                OpCodes.OP_2DROP, OpCodes.OP_2DROP]
+        NAME_UPDATE_OPS = [OP_NAME_UPDATE, -1, -1, OpCodes.OP_2DROP,
+                           OpCodes.OP_DROP]
+
+        name_script_op_count = None
+        name_pushdata = None
+
+        # Detect name operations; determine count of opcodes.
+        # Also extract the name field -- we might use that for something in a
+        # future version.
+        if match(ops[:len(NAME_NEW_OPS)], NAME_NEW_OPS):
+            name_script_op_count = len(NAME_NEW_OPS)
+        elif match(ops[:len(NAME_FIRSTUPDATE_OPS)], NAME_FIRSTUPDATE_OPS):
+            name_script_op_count = len(NAME_FIRSTUPDATE_OPS)
+            name_pushdata = ops[1]
+        elif match(ops[:len(NAME_UPDATE_OPS)], NAME_UPDATE_OPS):
+            name_script_op_count = len(NAME_UPDATE_OPS)
+            name_pushdata = ops[1]
+
+        if name_script_op_count is None:
+            return None, script
+
+        # Find the end position of the name data
+        n = 0
+        for i in range(name_script_op_count):
+            # Content of this loop is copied from Script.get_ops's loop
+            op = script[n]
+            n += 1
+
+            if op <= OpCodes.OP_PUSHDATA4:
+                # Raw bytes follow
+                if op < OpCodes.OP_PUSHDATA1:
+                    dlen = op
+                elif op == OpCodes.OP_PUSHDATA1:
+                    dlen = script[n]
+                    n += 1
+                elif op == OpCodes.OP_PUSHDATA2:
+                    dlen, = struct.unpack('<H', script[n: n + 2])
+                    n += 2
+                else:
+                    dlen, = struct.unpack('<I', script[n: n + 4])
+                    n += 4
+                if n + dlen > len(script):
+                    raise IndexError
+                op = (op, script[n:n + dlen])
+                n += dlen
+        # Strip the name data to yield the address script
+        address_script = script[n:]
+
+        if name_pushdata is None:
+            return None, address_script
+
+        normalized_name_op_script = bytearray()
+        normalized_name_op_script.append(OP_NAME_UPDATE)
+        normalized_name_op_script.extend(Script.push_data(name_pushdata[1]))
+        normalized_name_op_script.extend(Script.push_data(bytes([])))
+        normalized_name_op_script.append(OpCodes.OP_2DROP)
+        normalized_name_op_script.append(OpCodes.OP_DROP)
+        normalized_name_op_script.append(OpCodes.OP_RETURN)
+
+        return bytes(normalized_name_op_script), address_script
+
+    @classmethod
+    def hashX_from_script(cls, script):
+        name_op_script, address_script = cls.split_name_script(script)
+
+        return super().hashX_from_script(address_script)
+
+    @classmethod
+    def address_from_script(cls, script):
+        name_op_script, address_script = cls.split_name_script(script)
+
+        return super().address_from_script(address_script)
+
+    @classmethod
+    def name_hashX_from_script(cls, script):
+        name_op_script, address_script = cls.split_name_script(script)
+
+        if name_op_script is None:
+            return None
+
+        return super().hashX_from_script(name_op_script)
 
 
 class NamecoinTestnet(Namecoin):
@@ -1524,7 +1627,6 @@ class Newyorkcoin(AuxPowMixin, Coin):
     WIF_BYTE = bytes.fromhex("bc")
     GENESIS_HASH = ('5597f25c062a3038c7fd815fe46c67de'
                     'dfcb3c839fbc8e01ed4044540d08fe48')
-    DAEMON = daemon.LegacyRPCDaemon
     TX_COUNT = 5161944
     TX_COUNT_HEIGHT = 3948743
     TX_PER_BLOCK = 2
@@ -1539,7 +1641,6 @@ class NewyorkcoinTestnet(Newyorkcoin):
     WIF_BYTE = bytes.fromhex("f1")
     GENESIS_HASH = ('24463e4d3c625b0a9059f309044c2cf0'
                     'd7e196cf2a6ecce901f24f681be33c8f')
-    DAEMON = daemon.LegacyRPCDaemon
     TX_COUNT = 5161944
     TX_COUNT_HEIGHT = 3948743
     TX_PER_BLOCK = 2
@@ -2135,3 +2236,53 @@ class tBitg(Bitg):
     GENESIS_HASH = (
         '000008467c3a9c587533dea06ad9380cded3ed32f9742a6c0c1aebc21bf2bc9b')
     RPC_PORT = 19332
+
+
+class CivX(Coin):
+    NAME = "CivX"
+    SHORTNAME = "CIVX"
+    NET = "mainnet"
+    XPUB_VERBYTES = bytes.fromhex("0488b21e")
+    XPRV_VERBYTES = bytes.fromhex("0488ade4")
+    GENESIS_HASH = ('00000036090a68c523471da7a4f0f958'
+                    'c1b4403fef74a003be7f71877699cab7')
+    P2PKH_VERBYTE = bytes.fromhex("1C")
+    P2SH_VERBYTE = [bytes.fromhex("57")]
+    WIF_BYTE = bytes.fromhex("9C")
+    RPC_PORT = 4561
+    TX_COUNT = 1000
+    TX_COUNT_HEIGHT = 10000
+    TX_PER_BLOCK = 4
+    DAEMON = daemon.PreLegacyRPCDaemon
+    DESERIALIZER = lib_tx.DeserializerTxTime
+
+    @classmethod
+    def header_hash(cls, header):
+        version, = util.unpack_le_uint32_from(header)
+
+        if version > 2:
+            return double_sha256(header)
+        else:
+            return hex_str_to_hash(CivX.GENESIS_HASH)
+
+
+class CivXTestnet(CivX):
+    SHORTNAME = "tCIVX"
+    NET = "testnet"
+    XPUB_VERBYTES = bytes.fromhex("043587cf")
+    XPRV_VERBYTES = bytes.fromhex("04358394")
+    GENESIS_HASH = ('0000059bb2c2048493efcb0f1a034972'
+                    'b3ce4089d54c93b69aaab212fb369887')
+    P2PKH_VERBYTE = bytes.fromhex("4B")
+    P2SH_VERBYTE = [bytes.fromhex("CE")]
+    WIF_BYTE = bytes.fromhex("CB")
+    RPC_PORT = 14561
+
+    @classmethod
+    def header_hash(cls, header):
+        version, = util.unpack_le_uint32_from(header)
+
+        if version > 2:
+            return double_sha256(header)
+        else:
+            return hex_str_to_hash(CivXTestnet.GENESIS_HASH)

@@ -20,7 +20,7 @@ from collections import defaultdict
 from functools import partial
 
 from aiorpcx import (
-    ServerSession, JSONRPCAutoDetect, JSONRPCConnection,
+    RPCSession, JSONRPCAutoDetect, JSONRPCConnection,
     TaskGroup, handler_invocation, RPCError, Request, ignore_after, sleep,
     Event
 )
@@ -108,8 +108,7 @@ class SessionGroup(object):
 class SessionManager(object):
     '''Holds global state about all sessions.'''
 
-    def __init__(self, env, db, bp, daemon, mempool, notifications,
-                 shutdown_event):
+    def __init__(self, env, db, bp, daemon, mempool, shutdown_event):
         env.max_send = max(350000, env.max_send)
         self.env = env
         self.db = db
@@ -136,8 +135,6 @@ class SessionManager(object):
         # Event triggered when electrumx is listening for incoming requests.
         self.server_listening = Event()
         self.session_event = Event()
-        # Tell sessions about subscription changes
-        notifications.add_callback(self._notify_sessions)
 
         # Set up the RPC request handlers
         cmds = ('add_peer daemon_url disconnect getinfo groups log peers '
@@ -158,7 +155,7 @@ class SessionManager(object):
         host, port = args[:2]
         try:
             self.servers[kind] = await server
-        except Exception as e:
+        except OSError as e:    # don't suppress CancelledError
             self.logger.error(f'{kind} server failed to listen on {host}:'
                               f'{port:d} :{e!r}')
         else:
@@ -205,6 +202,7 @@ class SessionManager(object):
             # Start listening for incoming connections if paused and
             # session count has fallen
             if paused and len(self.sessions) <= low_watermark:
+                self.logger.info('resuming listening for incoming connections')
                 await self._start_external_servers()
                 paused = False
 
@@ -291,7 +289,7 @@ class SessionManager(object):
             'errors': sum(s.errors for s in self.sessions),
             'groups': len(group_map),
             'logged': len([s for s in self.sessions if s.log_me]),
-            'paused': sum(s.paused for s in self.sessions),
+            'paused': sum(not s.can_send.is_set() for s in self.sessions),
             'pid': os.getpid(),
             'peers': self.peer_mgr.info(),
             'requests': sum(s.count_pending_items() for s in self.sessions),
@@ -346,6 +344,8 @@ class SessionManager(object):
         '''Refresh the cached header subscription responses to be for height,
         and record that as notified_height.
         '''
+        # Paranoia: a reorg could race and leave db_height lower
+        height = min(height, self.db.db_height)
         electrum, raw = await self._electrum_and_raw_headers(height)
         self.hsub_results = (electrum, {'hex': raw.hex(), 'height': height})
         self.notified_height = height
@@ -477,7 +477,7 @@ class SessionManager(object):
 
     # --- External Interface
 
-    async def serve(self, event):
+    async def serve(self, notifications, event):
         '''Start the RPC server if enabled.  When the event is triggered,
         start TCP and SSL servers.'''
         try:
@@ -499,6 +499,8 @@ class SessionManager(object):
             if self.env.drop_client is not None:
                 self.logger.info('drop clients matching: {}'
                                  .format(self.env.drop_client.pattern))
+            # Start notifications; initialize hsub_results
+            await notifications.start(self.db.db_height, self._notify_sessions)
             await self._start_external_servers()
             # Peer discovery should start after the external servers
             # because we connect to ourself
@@ -559,8 +561,7 @@ class SessionManager(object):
         '''Notify sessions about height changes and touched addresses.'''
         height_changed = height != self.notified_height
         if height_changed:
-            # Paranoia: a reorg could race and leave db_height lower
-            await self._refresh_hsub_results(min(height, self.db.db_height))
+            await self._refresh_hsub_results(height)
             # Invalidate our history cache for touched hashXs
             hc = self.history_cache
             for hashX in set(hc).intersection(touched):
@@ -592,7 +593,7 @@ class SessionManager(object):
         self.subs_room -= 1
 
 
-class SessionBase(ServerSession):
+class SessionBase(RPCSession):
     '''Base class of ElectrumX JSON sessions.
 
     Each session runs its tasks in asynchronous parallelism with other
@@ -666,7 +667,7 @@ class SessionBase(ServerSession):
         super().connection_lost(exc)
         self.session_mgr.remove_session(self)
         msg = ''
-        if self.paused:
+        if not self.can_send.is_set():
             msg += ' whilst paused'
         if self.concurrency.max_concurrent != self.max_concurrent:
             msg += ' whilst throttled'
@@ -1057,7 +1058,7 @@ class ElectrumX(SessionBase):
 
     async def banner(self):
         '''Return the server banner text.'''
-        banner = 'You are connected to %s!'%(electrumx.version)
+        banner = f'You are connected to an {electrumx.version} server.'
 
         if self.is_tor():
             banner_file = self.env.tor_banner_file
