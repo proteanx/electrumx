@@ -7,13 +7,10 @@
    and memory consumption whilst serving clients.  Those problems
    should not occur with Python 3.7.
 
-.. note:: Bitcoin ABC developers have hastily introduced controversial
-   changes that break ElectrumX's block processing by requiring it to
-   be non-sequential.  Unlike others with unique requirements they
-   refused to make their code coin-specific.  ElectrumX continues to
-   require blocks be naturally ordered, and is compatible with any
-   non-CToR daemon, such as Bitcoin SV, and Bitcoin Unlimited /
-   Bitcoin XT with CToR disabled.
+.. note:: The primary difference between this and the official ElectrumX
+   is that this version supports any block ordering (including the lexically-
+   ordered blocks that can be created/followed by several Bitcoin Cash node
+   implementations: ABC, BU, XT, bchd, bcash, Bitprim, and others.
 
 
 Version 1.8.9 (02 Nov 2018)
