@@ -10,8 +10,15 @@
 .. note:: The primary difference between this and the official ElectrumX
    is that this version supports any block ordering (including the lexically-
    ordered blocks that can be created/followed by several Bitcoin Cash node
-   implementations: ABC, BU, XT, bchd, bcash, Bitprim, and others.
+   implementations: ABC, BU, XT, bchd, bcash, Bitprim, and others.)
 
+
+Version 1.8.10 (05 Nov 2018)
+============================
+
+* require aiorpcX 0.10.0
+* fix `#632`_
+* coin additions / updates: ZelCash (TheTrunk)
 
 Version 1.8.9 (02 Nov 2018)
 ===========================
@@ -219,3 +226,4 @@ bitcoincash:qzxpdlt8ehu9ehftw6rqsy2jgfq4nsltxvhrdmdfpn
 .. _#603: https://github.com/kyuupichan/electrumx/issues/603
 .. _#608: https://github.com/kyuupichan/electrumx/issues/608
 .. _#630: https://github.com/kyuupichan/electrumx/issues/630
+.. _#632: https://github.com/kyuupichan/electrumx/issues/630
