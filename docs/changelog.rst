@@ -12,6 +12,11 @@
    ordered blocks that can be created/followed by several Bitcoin Cash node
    implementations: ABC, BU, XT, bchd, bcash, Bitprim, and others.)
 
+Version 1.8.12 (10 Nov 2018)
+============================
+
+* bug fix
+
 Version 1.8.11 (07 Nov 2018)
 ============================
 
