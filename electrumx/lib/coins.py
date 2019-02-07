@@ -585,6 +585,7 @@ class BitcoinCashTestnet(BitcoinTestnetMixin, Coin):
 
 
 class BitcoinCashRegtest(BitcoinCashTestnet):
+    NAME = "BitcoinCash"
     NET = "regtest"
     GENESIS_HASH = ('0f9188f13cb7b2c71f2a335e3a4fc328'
                     'bf5beb436012afca590b1a11466e2206')
