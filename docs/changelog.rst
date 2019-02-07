@@ -18,9 +18,13 @@ Version 1.9.4 (7 Feb 2019)
 * coin additions / updates: BitcoinSV, SmartCash (rc125), NIX (phamels), Minexcoin (joesixpack),
   BitcoinABC (mblunderburg), Dash (zebra-lucky), BitcoinABCRegtest (ezegom), AXE (slowdive),
   NOR (flo071), BitcoinPlus (bushsolo), Myriadcoin (cryptapus), Trezarcoin (ChekaZ),
-  Bitcoin Diamond (John Shine), Unitus (ChekaZ)
-* close ElectrumX issues: `#554`_, `#653`_, `#655`_
+  Bitcoin Diamond (John Shine), NMC (jeremyrand), Dash (zebra-lucky), PeerCoin (peerchemist),
+  BCH testnet (Mark Lundeberg), Unitus (ChekaZ)
+* close ElectrumX issues: `#554`_, `#653`_, `#655`_, `#684`_
 * other minor tweaks (Michael Schmoock, Michael Taborsky)
+# increase default MAX_SEND for AuxPow Chains.  Truncate AuxPow for block heights covered
+  by a checkpoint.  (jeremyrand)
+* tighter RPC param checking (ghost43)
 
 Version 1.8.12 (10 Nov 2018)
 ============================
