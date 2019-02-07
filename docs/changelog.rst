@@ -15,16 +15,19 @@
 Version 1.9.4 (7 Feb 2019)
 ============================
 * Synch up to ElectrumX codebase (pulling in relevant & useful commits)
-* coin additions / updates: BitcoinSV, SmartCash (rc125), NIX (phamels), Minexcoin (joesixpack),
-  BitcoinABC (mblunderburg), Dash (zebra-lucky), BitcoinABCRegtest (ezegom), AXE (slowdive),
-  NOR (flo071), BitcoinPlus (bushsolo), Myriadcoin (cryptapus), Trezarcoin (ChekaZ),
-  Bitcoin Diamond (John Shine), NMC (jeremyrand), Dash (zebra-lucky), PeerCoin (peerchemist),
-  BCH testnet (Mark Lundeberg), Unitus (ChekaZ)
-* close ElectrumX issues: `#554`_, `#653`_, `#655`_, `#684`_
+  (cculianu)
+* coin additions / updates: SmartCash (rc125), NIX (phamels), Minexcoin
+  (joesixpack), BitcoinCash (mblunderburg), Dash (zebra-lucky),
+  BitcoinCashRegtest (ezegom), AXE (slowdive), NOR (flo071),
+  BitcoinPlus (bushsolo), Myriadcoin (cryptapus), Trezarcoin (ChekaZ), Bitcoin
+  Diamond (John Shine), NMC (jeremyrand), Dash (zebra-lucky), PeerCoin
+  (peerchemist), BCH testnet (Mark Lundeberg, cculianu), Unitus (ChekaZ)
+* close ElectrumX issues: `#554`_, `#653`_, `#655`_, `#684`_, `#713`_
 * other minor tweaks (Michael Schmoock, Michael Taborsky)
-# increase default MAX_SEND for AuxPow Chains.  Truncate AuxPow for block heights covered
-  by a checkpoint.  (jeremyrand)
+* increase default MAX_SEND for AuxPow Chains.  Truncate AuxPow for block
+  heights covered by a checkpoint.  (jeremyrand)
 * tighter RPC param checking (ghost43)
+* require aiorpcX 0.10.3
 
 Version 1.8.12 (10 Nov 2018)
 ============================
