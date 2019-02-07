@@ -1,8 +1,8 @@
 import setuptools
-version = '1.8.12'
+version = '1.9.4'
 
 setuptools.setup(
-    name='electrumX',
+    name='electronX',
     version=version,
     scripts=['electrumx_server', 'electrumx_rpc', 'electrumx_compact_history'],
     python_requires='>=3.6',
@@ -17,13 +17,13 @@ setuptools.setup(
     install_requires=['aiorpcX>=0.10.1,<0.11', 'attrs',
                       'plyvel', 'pylru', 'aiohttp >= 2'],
     packages=setuptools.find_packages(include=('electrumx*',)),
-    description='ElectrumX Server',
+    description='ElectronX Server',
     author='Neil Booth',
     author_email='kyuupichan@gmail.com',
     license='MIT Licence',
-    url='https://github.com/kyuupichan/electrumx',
-    long_description='Server implementation for the Electrum protocol',
-    download_url=('https://github.com/kyuupichan/electrumX/archive/'
+    url='https://github.com/Electron-Cash/electrumx',
+    long_description='Server implementation for the Electrum protocol - AOR Version',
+    download_url=('https://github.com/Electron-Cash/electrumX/archive/'
                   f'{version}.tar.gz'),
     classifiers=[
         'Development Status :: 5 - Production/Stable',

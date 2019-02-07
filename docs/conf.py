@@ -15,11 +15,11 @@
 import os
 import sys
 sys.path.insert(0, os.path.abspath('..'))
-VERSION="ElectrumX 1.8.12"
+VERSION="ElectronX 1.9.4"
 
 # -- Project information -----------------------------------------------------
 
-project = 'ElectrumX'
+project = 'ElectronX'
 copyright = '2016-2018, Neil Booth'
 author = 'Neil Booth'
 
@@ -82,7 +82,7 @@ html_theme = 'alabaster'
 #
 html_theme_options = {
     'description': 'Lightweight Electrum Server in Python',
-    'github_user': 'kyuupichan',
+    'github_user': 'Electron-Cash',
     'github_repo': 'electrumx',
     'github_button': True,
     'github_type': 'star',

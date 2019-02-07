@@ -12,6 +12,16 @@
    ordered blocks that can be created/followed by several Bitcoin Cash node
    implementations: ABC, BU, XT, bchd, bcash, Bitprim, and others.)
 
+Version 1.9.4 (7 Feb 2019)
+============================
+* Synch up to ElectrumX codebase (pulling in relevant & useful commits)
+* coin additions / updates: BitcoinSV, SmartCash (rc125), NIX (phamels), Minexcoin (joesixpack),
+  BitcoinABC (mblunderburg), Dash (zebra-lucky), BitcoinABCRegtest (ezegom), AXE (slowdive),
+  NOR (flo071), BitcoinPlus (bushsolo), Myriadcoin (cryptapus), Trezarcoin (ChekaZ),
+  Bitcoin Diamond (John Shine)
+* close ElectrumX issues: `#554`_, `#653`_, `#655`_
+* other minor tweaks (Michael Schmoock, Michael Taborsky)
+
 Version 1.8.12 (10 Nov 2018)
 ============================
 
