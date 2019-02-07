@@ -565,10 +565,9 @@ class BitcoinCashTestnet(BitcoinTestnetMixin, Coin):
     '''Bitcoin Testnet for Bitcoin Cash daemons.'''
     NAME = "BitcoinCash"
     PEERS = [
-        'electrum-testnet-abc.criptolayer.net s50112',
-        'bchtestnet.arihanc.com t53001 s53002',
-        'ciiattqkgzebpp6jofjbrkhvhwmgnsfoayljdcrve2p3qmkbv3duaoyd.onion '
-        't53001 s53002',
+        'bch0.kister.net t s',
+        'testnet.imaginary.cash t50001 s50002',
+        'blackie.c3-soft.com t60001 s60002',
     ]
 
     @classmethod
