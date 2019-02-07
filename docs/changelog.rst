@@ -18,7 +18,7 @@ Version 1.9.4 (7 Feb 2019)
 * coin additions / updates: BitcoinSV, SmartCash (rc125), NIX (phamels), Minexcoin (joesixpack),
   BitcoinABC (mblunderburg), Dash (zebra-lucky), BitcoinABCRegtest (ezegom), AXE (slowdive),
   NOR (flo071), BitcoinPlus (bushsolo), Myriadcoin (cryptapus), Trezarcoin (ChekaZ),
-  Bitcoin Diamond (John Shine)
+  Bitcoin Diamond (John Shine), Unitus (ChekaZ)
 * close ElectrumX issues: `#554`_, `#653`_, `#655`_
 * other minor tweaks (Michael Schmoock, Michael Taborsky)
 
