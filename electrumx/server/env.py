@@ -77,7 +77,7 @@ class Env(EnvBase):
         self.drop_client = self.custom("DROP_CLIENT", None, re.compile)
         # Blacklist URL. Set this to the empty string in the environment if you want to disable this facility
         self.blacklist_url = self.default('BLACKLIST_URL',
-                                          'https://www.c3-soft.com/downloads/BitcoinCash/Electron-Cash/blacklist.json'
+                                          'https://raw.githubusercontent.com/Electron-Cash/electronx-blacklist/master/blacklist.json'
                                           )
         self.blacklist_poll_interval = self.custom('BLACKLIST_POLL_INTERVAL', 300,
                                                    # parse as integer and limit it to >= 30 secs and <= 86400 (1 day)

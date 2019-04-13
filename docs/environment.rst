@@ -221,7 +221,9 @@ These environment variables are optional:
   list.  Care has been taken so that this file's ban lists do not conflict
   with whatever you specify via the rpc 'banip' or 'banhost' commands.
   Set this to the empty string `""` to disable this feature. Defaults to:
-  `https://www.c3-soft.com/downloads/BitcoinCash/Electron-Cash/blacklist.json`.
+  `https://raw.githubusercontent.com/Electron-Cash/electronx-blacklist/master/blacklist.json`.
+  (If you would like to contribute to this blacklist please visit:
+  https://github.com/Electron-Cash/electronx-blacklist/).
 
 .. envvar:: BLACKLIST_POLL_INTERVAL
 
