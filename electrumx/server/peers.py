@@ -289,6 +289,8 @@ class PeerManager(object):
         return False
 
     def _dupes_for_peer(self, peer_ip_addr):
+        ''' Note: peer_ip_addr in this case is an ip address string as returned
+        from getaddrinfo and not a Python ip_address object. '''
         dupes = [p for p in self.peers.copy() if p.last_good and not p.bad and not p.is_tor and p.ip_addr == peer_ip_addr]
         return dupes
 
