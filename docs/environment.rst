@@ -315,10 +315,6 @@ raise them.
   Bandwidth usage is gradually reduced over time by "refunding" a
   proportional part of the limit every now and then.
 
-  Note from ElectronX maintainers: Despite what the above paragraphs claim,
-  there is nothing in the codebase for rate-limiting abusive clients via
-  sleep calls or any such thing.
-
 .. envvar:: SESSION_TIMEOUT
 
   An integer number of seconds defaulting to 600.  Sessions with no
