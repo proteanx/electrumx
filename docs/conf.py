@@ -15,7 +15,7 @@
 import os
 import sys
 sys.path.insert(0, os.path.abspath('..'))
-VERSION="ElectronX 1.9.4"
+VERSION="ElectronX 1.10.0"
 
 # -- Project information -----------------------------------------------------
 

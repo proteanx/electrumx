@@ -196,9 +196,6 @@ def test_RPC_PORT():
     assert_integer('RPC_PORT', 'rpc_port', 8000)
 
 
-def test_MAX_SUBSCRIPTIONS():
-    assert_integer('MAX_SUBSCRIPTIONS', 'max_subscriptions', 10000)
-
 
 def test_LOG_SESSIONS():
     assert_integer('LOG_SESSIONS', 'log_sessions', 3600)
@@ -217,7 +214,7 @@ def test_MAX_SEND():
 
 
 def test_MAX_SUBS():
-    assert_integer('MAX_SUBS', 'max_subs', 250000)
+    assert_integer('MAX_SUBS', 'max_subs', 1000000)
 
 
 def test_MAX_SESSIONS():

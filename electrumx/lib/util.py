@@ -280,8 +280,9 @@ def protocol_tuple(s):
 
     If the version number is bad, (0, ) indicating version 0 is returned.'''
     try:
-        # clean up extra text at end of version e.g. '3.3.4CS' -> '3.3.4'
-        s = VERSION_CLEANUP_REGEX.match(s).group(1)
+        # clean up extra text at end of version e.g. '3.3.4CS' -> '3.3.4',
+        # 'electrum/3.3.4' -> '3.3.4', etc
+        s = ''.join(VERSION_CLEANUP_REGEX.findall(s))
         return tuple(int(part) for part in s.split('.'))
     except Exception:
         return (0, )

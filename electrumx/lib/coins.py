@@ -46,7 +46,7 @@ import electrumx.lib.tx as lib_tx
 import electrumx.lib.tx_dash as lib_tx_dash
 import electrumx.server.block_processor as block_proc
 import electrumx.server.daemon as daemon
-from electrumx.server.session import (ElectrumX, DashElectrumX,
+from electrumx.server.session import (ElectrumX, ElectronX, DashElectrumX,
                                       SmartCashElectrumX, AuxPoWElectrumX)
 
 
@@ -69,7 +69,7 @@ class Coin(object):
     BASIC_HEADER_SIZE = 80
     STATIC_BLOCK_HEADERS = True
     SESSIONCLS = ElectrumX
-    DEFAULT_MAX_SEND = 1000000
+    DEFAULT_MAX_SEND = 4000000  # 4MB max response size
     DESERIALIZER = lib_tx.Deserializer
     DAEMON = daemon.Daemon
     BLOCK_PROCESSOR = block_proc.BlockProcessor
@@ -379,6 +379,7 @@ class HOdlcoin(Coin):
 class BitcoinCash(BitcoinMixin, Coin):
     NAME = "BitcoinCash"
     SHORTNAME = "BCH"
+    SESSIONCLS = ElectronX  # This is only here so the logger says ElectronX
     TX_COUNT = 246362688
     TX_COUNT_HEIGHT = 511484
     TX_PER_BLOCK = 400
@@ -403,6 +404,10 @@ class BitcoinCash(BitcoinMixin, Coin):
                     '<br/><br/>')
         return False
 
+
+class BitcoinCashABC(BitcoinCash):
+    ''' Compatibility with ElectrumX's broken naming scheme. '''
+    NAME = "BitcoinCashABC"
 
 class BitcoinSegwit(BitcoinMixin, Coin):
     NAME = "BitcoinSegwit"
@@ -590,6 +595,7 @@ class BitcoinCashTestnet(BitcoinTestnetMixin, Coin):
         'testnet.imaginary.cash t50001 s50002',
         'blackie.c3-soft.com t60001 s60002',
     ]
+    SESSIONCLS = ElectronX  # This is here for the logger, really
 
     @classmethod
     def upgrade_required(cls, client_ver):
@@ -602,6 +608,9 @@ class BitcoinCashTestnet(BitcoinTestnetMixin, Coin):
                     '<br/><br/>')
         return False
 
+class BitcoinCashTestnetABC(BitcoinCashTestnet):
+    ''' Compatibility with ElectrumX's broken naming scheme. '''
+    NAME = "BitcoinCashABC"
 
 class BitcoinCashRegtest(BitcoinCashTestnet):
     NAME = "BitcoinCash"

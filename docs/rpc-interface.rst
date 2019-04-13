@@ -26,6 +26,29 @@ connection attempt.  This command takes a single argument: the peer's
   $ electrumx_rpc add_peer "ecdsa.net v1.0 s110 t"
   "peer 'ecdsa.net v1.0 s110 t' added"
 
+banhost
+---------
+
+Ban a hostname suffix.  Banning by hostname only affects peers and does not
+ban any clients that happen to match the hostname (this is because we never
+do reverse-DNS lookups for clients).  Note that if you really want to ban bad
+actors it's recommended you ban by IP which denies the abusers access earlier
+on in the connection life cycle. Banning by hostname is a convenience for
+when scammers or sybil servers all tend to use the same domain names, and you
+want to quickly ban them all. Example usage::
+
+  $ electrumx_rpc banhost '*.scammer.com'
+  "banned peers matching suffix: scammer.com"
+
+banip
+-----
+
+Ban an IP address.  This immediately disconnects all client sessions and
+removes all peers with the specified IP address::
+
+  $ electrumx_rpc banip 10.10.100.123
+  "disconected session 15;banned 10.10.100.123"
+
 daemon_url
 ----------
 
@@ -120,6 +143,14 @@ groups
 Return a list of all current session groups.  Takes no arguments.
 
 The output is quite similar to the `sessions`_ command.
+
+listbanned
+----------
+
+Return the current ban table(s). Takes no arguments.  Note that by default
+the ban table is populated with entries from the blacklist.json file downloaded
+via :envvar:`BLACKLIST_URL`. The ban table can also be edited using the
+`banip`_ and `banhost`_ commands.
 
 log
 ---
@@ -240,5 +271,21 @@ Flush all cached data to disk and shut down the server cleanly, as if
 sending the `KILL` signal.  Be patient - during initial sync flushing
 all cached data to disk can take several minutes.  This command takes
 no arguments.
+
+unbanhost
+---------
+
+Unban a hostname suffix.  This undoes the effect of the `banhost`_ command::
+
+  $ electrumx_rpc unbanhost '*.scammer.com'
+  "unbanned peers matching suffix: scammer.com"
+
+unbanip
+-------
+
+Unban an IP address.  This undoes the effect of the `banip`_ command::
+
+  $ electrumx_rpc unbanip 10.10.100.123
+  "unbanned 10.10.100.123"
 
 .. _session logging:

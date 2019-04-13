@@ -53,7 +53,6 @@ class Env(EnvBase):
             self.ssl_certfile = self.required('SSL_CERTFILE')
             self.ssl_keyfile = self.required('SSL_KEYFILE')
         self.rpc_port = self.integer('RPC_PORT', 8000)
-        self.max_subscriptions = self.integer('MAX_SUBSCRIPTIONS', 10000)
         self.banner_file = self.default('BANNER_FILE', None)
         self.tor_banner_file = self.default('TOR_BANNER_FILE',
                                             self.banner_file)
@@ -69,12 +68,22 @@ class Env(EnvBase):
         self.donation_address = self.default('DONATION_ADDRESS', '')
         # Server limits to help prevent DoS
         self.max_send = self.integer('MAX_SEND', self.coin.DEFAULT_MAX_SEND)
-        self.max_subs = self.integer('MAX_SUBS', 250000)
+        self.max_subs = self.integer('MAX_SUBS', 1000000)
         self.max_sessions = self.sane_max_sessions()
+        self.max_sessions_per_ip = self.integer('MAX_SESSIONS_PER_IP', 50)
         self.max_session_subs = self.integer('MAX_SESSION_SUBS', 50000)
-        self.bandwidth_limit = self.integer('BANDWIDTH_LIMIT', 2000000)
+        self.bandwidth_limit = self.integer('BANDWIDTH_LIMIT', 8000000)
         self.session_timeout = self.integer('SESSION_TIMEOUT', 600)
         self.drop_client = self.custom("DROP_CLIENT", None, re.compile)
+        # Blacklist URL. Set this to the empty string in the environment if you want to disable this facility
+        self.blacklist_url = self.default('BLACKLIST_URL',
+                                          'https://www.c3-soft.com/downloads/BitcoinCash/Electron-Cash/blacklist.json'
+                                          )
+        self.blacklist_poll_interval = self.custom('BLACKLIST_POLL_INTERVAL', 300,
+                                                   # parse as integer and limit it to >= 30 secs and <= 86400 (1 day)
+                                                   lambda x: (int(x) >= 30 and int(x) <= 86400 and int(x)) or 300)
+        # If this is set, then we ban whenever an IP address has more than self.max_sessions_per_ip connections
+        self.ban_excessive_connections = self.boolean('BAN_EXCESSIVE_CONNECTIONS', True)
 
         # Identities
         clearnet_identity = self.clearnet_identity()

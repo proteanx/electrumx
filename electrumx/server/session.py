@@ -8,6 +8,7 @@
 '''Classes for local RPC server and remote client TCP/SSL servers.'''
 
 import asyncio
+import aiohttp
 import codecs
 import datetime
 import itertools
@@ -18,6 +19,7 @@ import ssl
 import time
 from collections import defaultdict
 from functools import partial
+from ipaddress import ip_address
 
 from aiorpcx import (
     RPCSession, JSONRPCAutoDetect, JSONRPCConnection,
@@ -115,7 +117,7 @@ class SessionManager(object):
         self.bp = bp
         self.daemon = daemon
         self.mempool = mempool
-        self.peer_mgr = PeerManager(env, db)
+        self.peer_mgr = PeerManager(env, db, self)
         self.shutdown_event = shutdown_event
         self.logger = util.class_logger(__name__, self.__class__.__name__)
         self.servers = {}
@@ -135,10 +137,17 @@ class SessionManager(object):
         # Event triggered when electrumx is listening for incoming requests.
         self.server_listening = Event()
         self.session_event = Event()
+        # banned ip_address instances -> 'reason'
+        self.banned_ips = defaultdict(str)
+        self.banned_hostname_suffixes = defaultdict(str)
+        self.ban_queue = set()
+        self.ip_session_totals = defaultdict(int)
+        self.max_sessions_per_ip = env.max_sessions_per_ip
 
         # Set up the RPC request handlers
-        cmds = ('add_peer daemon_url disconnect getinfo groups log peers '
-                'query reorg sessions stop'.split())
+        cmds = ('add_peer banhost banip daemon_url disconnect getinfo groups '
+                'listbanned log peers query reorg sessions stop '
+                'unbanhost unbanip'.split())
         LocalRPC.request_handlers = {cmd: getattr(self, 'rpc_' + cmd)
                                      for cmd in cmds}
 
@@ -205,6 +214,13 @@ class SessionManager(object):
                 self.logger.info('resuming listening for incoming connections')
                 await self._start_external_servers()
                 paused = False
+            if self.ban_queue:
+                q = self.ban_queue.copy()
+                self.ban_queue.clear()
+                for ip in q:
+                    self.banned_ips[ip] = 'abuse'
+                    self.logger.info(f'banning {ip} for abuse')
+                    await self._kill_all_for_ip(ip)
 
     async def _log_sessions(self):
         '''Periodically log sessions.'''
@@ -350,7 +366,254 @@ class SessionManager(object):
         self.hsub_results = (electrum, {'hex': raw.hex(), 'height': height})
         self.notified_height = height
 
+    async def _kill_all_for_ip(self, ipaddr):
+        ''' Disconnects all sessions and drop all peers for a given ip address
+        (ipaddr is a Python ip_address object) '''
+        ret = ''
+        for session in self.sessions.copy():
+            ipa = session.peer_ip_address()
+            if ipa:
+                if ipa == ipaddr:
+                    # match, disconnect
+                    self.logger.info(f"Disconnecting {session.session_id} {ipa}")
+                    await session.close(force_after=1)
+                    ret += f"disconnected session {session.session_id};"
+        for peer in self.peer_mgr.peers.copy():
+            try:
+                peer_ipaddr = ip_address(peer.ip_addr)
+            except ValueError:
+                # not a valid IP yet.. (we never connected to it)
+                continue
+            if peer_ipaddr == ipaddr:
+                ret += f'dropping peer {peer_ipaddr};'
+                peer.mark_bad()
+                peer.retry_event.set() # force it to wake up and drop itself
+        return ret
+
+    def does_peer_match_hostname_ban(self, peer, suffix=None):
+        host = (peer.host and peer.host.strip().lower()) or ''
+        if suffix is not None and suffix:
+            return (host.endswith(suffix) and ('*' + suffix)) or ''  # We always return a string from this function
+        elif suffix is None:  # Check for None so that '' never matches
+            for suffix in self.banned_hostname_suffixes.copy():
+                if (suffix  # defensive programming: prevent trivial empty string matches
+                        and host.endswith(suffix)):
+                    return ('*' + suffix)
+        return ''  # False/No match  We always return a string from this function
+
+    async def _kill_all_peers_with_suffix(self, suffix):
+        ret = ''
+        for peer in self.peer_mgr.peers.copy():
+            if self.does_peer_match_hostname_ban(peer, suffix):
+                ret += f'dropping peer {peer};'
+                peer.mark_bad()
+                peer.retry_event.set() # force it to wake up and drop itself
+        return ret
+
+    async def _got_new_blacklist_hosts(self, last_blacklist, bl):
+        ''' param: last_blacklist should be a set or None
+            param: bl should always be a set of string hostname suffixes '''
+        if isinstance(last_blacklist, set):
+            no_longer_blacklisted = last_blacklist - bl
+            rmct = 0
+            for h in no_longer_blacklisted:
+                h = self._normalize_ban_host(h)
+                rmct += int(self.banned_hostname_suffixes.pop(h, None) is not None)
+            if rmct:
+                self.logger.info(f"{rmct} hosts removed from blacklist")
+        for h in bl:
+            h = self._normalize_ban_host(h)
+            if h not in self.banned_hostname_suffixes and h and '*' not in h:
+                self.logger.info(f"Got new blacklist host '*{h}'")
+                self.banned_hostname_suffixes[h] = 'blacklist'
+                await self._kill_all_peers_with_suffix(h)
+
+    async def _got_new_blacklist(self, last_blacklist, bl):
+        ''' param: last_blacklist should be a set or None
+            param: bl should always be a set of string IP addresses '''
+        if isinstance(last_blacklist, set):
+            no_longer_blacklisted = last_blacklist - bl
+            rmct = 0
+            for ip in no_longer_blacklisted:
+                try:
+                    ipaddr = ip_address(ip)
+                    rmct += int(self.banned_ips.pop(ipaddr, None) is not None)
+                except ValueError as e:
+                    # ignore bad IP in previous set
+                    continue
+            if rmct:
+                self.logger.info(f"{rmct} IPs removed from blacklist")
+        for ip in bl:
+            try:
+                ipaddr = ip_address(ip)
+                if ipaddr not in self.banned_ips:
+                    self.logger.info(f"Got new blacklist IP {ipaddr}")
+                    self.banned_ips[ipaddr] = 'blacklist'
+                    await self._kill_all_for_ip(ipaddr)
+            except ValueError as e:
+                self.logger.error(f"Could not parse IP {ip}: ({e})")
+                continue
+
+    async def _download_blacklist(self):
+        ''' Downloads the blacklist.json file from the blacklist URL every 5
+        minutes. '''
+        URL = self.env.blacklist_url.strip()
+        sleeptime = self.env.blacklist_poll_interval
+        if not URL:
+            self.logger.info("Blacklist download disabled")
+            return
+        self.logger.info(f"Blacklist will be downloaded every {sleeptime:0.2f} secs from URL: {URL}")
+        class BadResponse(Exception):
+            pass
+        async def fetch(client):
+            async with client.get(URL) as resp:
+                if resp.status == 200:
+                    return await resp.text()
+                raise BadResponse(f'Bad Response: {resp.status}')
+        def convert_from_electrumx_blacklist(bl):
+            ret = {
+                'blacklist-ips' : [],
+                'blacklist-hosts' : [],
+            }
+            for thing in bl:
+                try:
+                    ip = ip_address(thing)
+                    ret['blacklist-ips'].append(str(ip))
+                    continue
+                except ValueError:
+                    # was a *.domain.tld style..
+                    pass
+                h = self._normalize_ban_host(thing)
+                if h and '*' not in h:
+                    ret['blacklist-hosts'].append(h)
+            if not any(len(ret[k]) for k in ret):
+                # Hmm.. failed to parse any IPs and ANY hosts. Must be a bad file format.. or something!
+                return None
+            return ret
+
+        def maybe_update_from_listbanned_format(d):
+            ''' This is in case the user pointed this server at a .json file
+            that is a copy-pasta from his 'listbanned' rpc output.  As a
+            convenience we support that format and will just mogrify the json
+            that came from that format to what we expect. '''
+            remap = (
+                ('blacklist-ips', 'banned-ips'),
+                ('blacklist-hosts', 'banned-hosts')
+            )
+            for out, inp in remap:
+                if out not in d and isinstance(d.get(inp), dict):
+                    d.update({ out : list( d[inp].keys() ) })  # remap 'banned-X' : { 'IP_OR_HOSTNAME1' : 'reason', ... } to 'blacklist-X' : [ 'IP_OR_HOSTNAME1', 'IP_OR_HOSTNAME2' ... ] (dropping the 'reason')
+                    del d[inp]
+
+        last_blacklist, last_blacklist_hosts = None, None
+        sleeptime_err = 30.0  # Hard coded -- sleep for 30 seconds on error and try again.
+        while True:
+            t0  = time.time()
+            err = True
+            try:
+                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30.0)) as client:
+                    text = await fetch(client)
+                blacklist = json.loads(text)
+                bl, blh = None, None
+                if isinstance(blacklist, list):
+                    # convert from electrumx format (flat list with everything mixed-in)
+                    blacklist = convert_from_electrumx_blacklist(blacklist)
+                    if blacklist:
+                        self.logger.info(f"Blacklist was in ElectrumX format; imported {len(blacklist['blacklist-ips'])} IPs, {len(blacklist['blacklist-hosts'])} hosts")
+                if isinstance(blacklist, dict):
+                    maybe_update_from_listbanned_format(blacklist)
+                    bl = blacklist.get('blacklist-ips', None)
+                    blh = blacklist.get('blacklist-hosts', None)
+                else:
+                    self.logger.error("Blacklist file has an unrecognized format!")
+                if isinstance(bl, list):
+                    err = False
+                    bl = set(bl)
+                    if bl != last_blacklist:
+                        await self._got_new_blacklist(last_blacklist, bl)
+                    else:
+                        self.logger.info("Blacklist IPs unchanged...")
+                    last_blacklist = bl
+                if isinstance(blh, list):
+                    err = False
+                    blh = set(blh)
+                    if blh != last_blacklist_hosts:
+                        await self._got_new_blacklist_hosts(last_blacklist_hosts, blh)
+                    else:
+                        self.logger.info("Blacklist hosts unchanged...")
+                    last_blacklist_hosts = blh
+                if err:
+                    self.logger.error("No valid data found in the downloaded blacklist")
+            except (aiohttp.ClientError, BadResponse) as e:
+                self.logger.error(f"Error downloading blacklist: {repr(e)}")
+            except json.decoder.JSONDecodeError as e:
+                self.logger.error(f"Error decoding blacklist: {e}")
+            except BaseException as e:
+                self.logger.error(f'[Blacklist DL] BaseException: ({repr(e)})')
+            st = sleeptime_err if err else sleeptime
+            time_to_sleep = max(0, st - (time.time()-t0))
+            self.logger.info(f"[Blacklist DL] will try again in {time_to_sleep:0.2f} secs")
+            await sleep(time_to_sleep)
+
+    def _normalize_ban_host(self, h):
+        h = h.lower()
+        while h.startswith('*') or h.startswith('.'):
+            h = h[1:]
+        return h
+
     # --- LocalRPC command handlers
+    async def rpc_banhost(self, host):
+        ''' Ban a hostname, or *.hostdomain.tld glob. Note this usage only
+        bans server peers and not any clients that happen to match said host.
+        As such, banning by IP is far more effective. '''
+        host = self._normalize_ban_host(host)
+        if '*' in host or not host:
+            return 'Invalid hostname glob. Specify *.foo.bar or baz.foo.bar'
+        self.banned_hostname_suffixes[host] = 'rpc_banhost'
+        # disconnect all peers...
+        ret = await self._kill_all_peers_with_suffix(host)
+        #
+        return ret + f'banned peers matching suffix: {host}'
+
+    async def rpc_banip(self, ip):
+        ''' Ban an ip address, disconnecting any sessions or peers associated
+        with that address and preventing future connections. '''
+        try:
+            ipaddr = ip_address(ip)
+        except ValueError:
+            return "invalid IP"
+        self.banned_ips[ipaddr] = 'rpc_banip'
+        # disconnect all sessions matching IP
+        ret = await self._kill_all_for_ip(ipaddr)
+        #
+        return ret + f'banned {ip}'
+
+    async def rpc_unbanhost(self, host):
+        ''' Unban a host.  Inverse of rpc_banhost. '''
+        host = self._normalize_ban_host(host)
+        if host in self.banned_hostname_suffixes:
+            self.banned_hostname_suffixes.pop(host, None)
+            return f'unbanned peers matching suffix: {host}'
+        else:
+            return f'{host} was not in ban list'
+
+    async def rpc_unbanip(self, ip):
+        ''' UnBan an ip address. '''
+        try:
+            ipaddr = ip_address(ip)
+        except ValueError:
+            return "invalid IP"
+        if ipaddr in self.banned_ips:
+            self.banned_ips.pop(ipaddr, None)
+            return f'unbanned {ip}'
+        else:
+            return f'{ip} was not in ban list'
+
+    async def rpc_listbanned(self):
+        ''' List banned ip addresses. '''
+        return { 'banned-ips' : { str(ip) : reason for ip, reason in self.banned_ips.copy().items() },
+                 'banned-hosts' : {'*' + str(suffix) : reason for suffix, reason in self.banned_hostname_suffixes.copy().items() },
+                }
 
     async def rpc_add_peer(self, real_name):
         '''Add a peer.
@@ -505,6 +768,7 @@ class SessionManager(object):
             # Peer discovery should start after the external servers
             # because we connect to ourself
             async with TaskGroup() as group:
+                await group.spawn(self._download_blacklist())
                 await group.spawn(self.peer_mgr.discover_peers())
                 await group.spawn(self._clear_stale_sessions())
                 await group.spawn(self._log_sessions())
@@ -570,8 +834,22 @@ class SessionManager(object):
         for session in self.sessions:
             await session.spawn(session.notify, touched, height_changed)
 
+    def can_add_session(self, session):
+        ''' Checks the ban list and also the max_sessions_per_ip, and returns
+        True if ok, False if limit reached or banned. '''
+        ipaddr = session.peer_ip_address()
+        if ipaddr in self.banned_ips:
+            return False, f'IP {ipaddr} is banned'
+        if ipaddr and self.ip_session_totals[ipaddr] >= self.max_sessions_per_ip:
+            if self.env.ban_excessive_connections and not session.is_tor():
+                self.ban_queue.add(ipaddr)
+                self.session_event.set()
+            return False, f'IP {ipaddr} has reached max_session_per_ip ({self.max_sessions_per_ip})'
+        return True, ''
+
     def add_session(self, session):
         self.sessions.add(session)
+        self.ip_session_totals[session.peer_ip_address()] += 1
         self.session_event.set()
         gid = int(session.start_time - self.start_time) // 900
         if self.cur_group.gid != gid:
@@ -580,8 +858,15 @@ class SessionManager(object):
 
     def remove_session(self, session):
         '''Remove a session from our sessions list if there.'''
-        self.sessions.remove(session)
-        self.session_event.set()
+        if session in self.sessions:
+            # we do this test because we only want to set the event flag
+            # if a real active session ended
+            self.sessions.discard(session)
+            ipaddr = session.peer_ip_address()
+            self.ip_session_totals[ipaddr] -= 1
+            if self.ip_session_totals[ipaddr] <= 0:
+                del self.ip_session_totals[ipaddr]
+            self.session_event.set()
 
     def new_subscription(self):
         if self.subs_room <= 0:
@@ -601,6 +886,7 @@ class SessionBase(RPCSession):
 
     MAX_CHUNK_SIZE = 2016
     session_counter = itertools.count()
+    session_id = -1  # This gets set once a connection is made
 
     def __init__(self, session_mgr, db, mempool, peer_mgr, kind):
         connection = JSONRPCConnection(JSONRPCAutoDetect)
@@ -651,15 +937,35 @@ class SessionBase(RPCSession):
         status += str(self._concurrency.max_concurrent)
         return status
 
+    def _abort_if_not_allowed(self):
+        ok, reason = self.session_mgr.can_add_session(self)
+        if not ok:
+            self.logger.info(f'{reason}; refusing connection')
+            self.abort()
+            return True
+
+    def peer_ip_address(self):
+        ''' Parses the peer_address() and returns an ip_address object, or None
+        if cannot parse '''
+        pa = self.peer_address()
+        if not pa:
+            self.logger.error(f'NO IP address for {self}')
+            return None
+        try:
+            return ip_address(pa[0])
+        except ValueError:
+            self.logger.error(f'Could not parse IP: {pa[0]}')
+
     def connection_made(self, transport):
         '''Handle an incoming client connection.'''
         super().connection_made(transport)
-        self.session_id = next(self.session_counter)
-        context = {'conn_id': f'{self.session_id}'}
-        self.logger = util.ConnectionLogger(self.logger, context)
-        self.group = self.session_mgr.add_session(self)
-        self.logger.info(f'{self.kind} {self.peer_address_str()}, '
-                         f'{self.session_mgr.session_count():,d} total')
+        if not self._abort_if_not_allowed():
+            self.session_id = next(self.session_counter)
+            context = {'conn_id': f'{self.session_id}'}
+            self.logger = util.ConnectionLogger(self.logger, context)
+            self.group = self.session_mgr.add_session(self)
+            self.logger.info(f'{self.kind} {self.peer_address_str()}, '
+                             f'{self.session_mgr.session_count():,d} total')
 
     def connection_lost(self, exc):
         '''Handle client disconnection.'''
@@ -696,6 +1002,10 @@ class SessionBase(RPCSession):
             handler = None
         coro = handler_invocation(handler, request)()
         return await coro
+
+    def is_tor(self):
+        ''' Subclasses should override this '''
+        return False
 
 
 class ElectrumX(SessionBase):
@@ -1282,6 +1592,11 @@ class ElectrumX(SessionBase):
             })
 
         self.request_handlers = handlers
+
+
+class ElectronX(ElectrumX):
+    ''' Added so that the logs show ElectronX for Bitcoin Cash '''
+    pass
 
 
 class LocalRPC(SessionBase):

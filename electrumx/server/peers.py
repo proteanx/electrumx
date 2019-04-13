@@ -13,6 +13,7 @@ import socket
 import ssl
 import time
 from collections import defaultdict, Counter
+from ipaddress import ip_address
 
 from aiorpcx import (Connector, RPCSession, SOCKSProxy,
                      Notification, handler_invocation,
@@ -30,6 +31,12 @@ WAKEUP_SECS = 300
 class BadPeerError(Exception):
     pass
 
+
+class BannedPeer(BadPeerError):
+    pass
+
+class DupePeer(BadPeerError):
+    pass
 
 def assert_good(message, result, instance):
     if not isinstance(result, instance):
@@ -55,12 +62,13 @@ class PeerManager(object):
     Attempts to maintain a connection with up to 8 peers.
     Issues a 'peers.subscribe' RPC to them and tells them our data.
     '''
-    def __init__(self, env, db):
+    def __init__(self, env, db, session_mgr):
         self.logger = class_logger(__name__, self.__class__.__name__)
         # Initialise the Peer class
         Peer.DEFAULT_PORTS = env.coin.PEER_DEFAULT_PORTS
         self.env = env
         self.db = db
+        self.session_mgr = session_mgr
 
         # Our clearnet and Tor Peers, if any
         sclass = env.coin.SESSIONCLS
@@ -156,13 +164,15 @@ class PeerManager(object):
                           source=None):
         '''Add a limited number of peers that are not already present.'''
         new_peers = []
+        match_set = self.peers.copy()
         for peer in peers:
             if not peer.is_public or (peer.is_tor and not self.proxy):
                 continue
 
-            matches = peer.matches(self.peers)
+            matches = peer.matches(match_set)
             if not matches:
                 new_peers.append(peer)
+                match_set.add(peer)
             elif check_ports:
                 for match in matches:
                     if match.check_ports(peer):
@@ -231,6 +241,12 @@ class PeerManager(object):
                         await self._verify_peer(session, peer)
                 is_good = True
                 break
+            except DupePeer as e:
+                self.logger.error(f'{peer_text} dupe peer: {e}')
+                return True # It's a dupe. Disallow to prevent phisher sybills
+            except BannedPeer as e:
+                self.logger.error(f'{peer_text} is banned: ({e})')
+                return True # It's banend, so should drop it
             except BadPeerError as e:
                 self.logger.error(f'{peer_text} marking bad: ({e})')
                 peer.mark_bad()
@@ -272,11 +288,23 @@ class PeerManager(object):
                 return True
         return False
 
+    def _dupes_for_peer(self, peer_ip_addr):
+        dupes = [p for p in self.peers.copy() if p.last_good and not p.bad and not p.is_tor and p.ip_addr == peer_ip_addr]
+        return dupes
+
     async def _verify_peer(self, session, peer):
         if not peer.is_tor:
             address = session.peer_address()
             if address:
                 peer.ip_addr = address[0]
+                if ip_address(peer.ip_addr) in self.session_mgr.banned_ips:
+                    raise BannedPeer(f'Peer IP {peer.ip_addr} is banned')
+                dupes = self._dupes_for_peer(peer.ip_addr)
+                if dupes:
+                    raise DupePeer(f'Peer {peer} is a dupe! {len(dupes)} other peers with IP {peer.ip_addr} were found!')
+        banned_suffix = self.session_mgr.does_peer_match_hostname_ban(peer)
+        if banned_suffix:
+            raise BannedPeer(f'Peer matches banned hostname suffix {banned_suffix}')
 
         # server.version goes first
         message = 'server.version'
@@ -444,6 +472,17 @@ class PeerManager(object):
             else:
                 permit = any(source == info[-1][0] for info in infos)
                 reason = 'source-destination mismatch'
+                if permit:
+                    permit = not any(ip_address(info[-1][0]) in self.session_mgr.banned_ips for info in infos)
+                    reason = 'banned IP'
+                if permit:
+                    permit = not any(self._dupes_for_peer(info[-1][0]) for info in infos)
+                    reason = 'dupe peer'
+                if permit:
+                    notok = self.session_mgr.does_peer_match_hostname_ban(peer)
+                    if notok:
+                        permit = False
+                        reason = f'banned hostname suffix: {notok}'
 
         if permit:
             self.logger.info(f'accepted add_peer request from {source} '
