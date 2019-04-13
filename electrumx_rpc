@@ -43,7 +43,7 @@ other_commands = {
         },
     ),
     'banhost': (
-        'ban an hostname or hostname glob (applied to peers only)',
+        'ban a hostname or hostname glob (applied to peers only)',
         [], {
             'type': str,
             'dest': 'host',
