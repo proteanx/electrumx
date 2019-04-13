@@ -210,7 +210,7 @@ def test_DB_ENGINE():
 
 
 def test_MAX_SEND():
-    assert_integer('MAX_SEND', 'max_send', 1000000)
+    assert_integer('MAX_SEND', 'max_send', 4000000)
 
 
 def test_MAX_SUBS():
@@ -218,7 +218,7 @@ def test_MAX_SUBS():
 
 
 def test_MAX_SESSIONS():
-    too_big = 1000000
+    too_big = 10000000
     os.environ['MAX_SESSIONS'] = str(too_big)
     e = Env()
     assert e.max_sessions < too_big
@@ -230,7 +230,7 @@ def test_MAX_SESSION_SUBS():
 
 
 def test_BANDWIDTH_LIMIT():
-    assert_integer('BANDWIDTH_LIMIT', 'bandwidth_limit', 2000000)
+    assert_integer('BANDWIDTH_LIMIT', 'bandwidth_limit', 8000000)
 
 
 def test_SESSION_TIMEOUT():
