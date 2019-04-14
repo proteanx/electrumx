@@ -137,6 +137,11 @@ Low-priority sessions have their requests served after higher priority
 sessions.  ElectrumX will start delaying responses to a session if it
 becomes sufficiently deprioritized.
 
+getenv
+------
+
+Return the ENV variables that the server is currently using for its configuration.
+
 groups
 ------
 
@@ -228,6 +233,11 @@ reorg - which defaults to 3.
 That number of blocks will be backed up - using undo information
 stored in ElectrumX's database - and then ElectrumX will move forwards
 on the daemon's main chain to its current height.
+
+session_ip_counts
+-----------------
+
+Return the current counts of extant sessions per IP address.
 
 .. _sessions:
 

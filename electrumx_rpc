@@ -20,11 +20,13 @@ import electrumx.lib.text as text
 
 
 simple_commands = {
+    'getenv' : 'Print the env vars currently used by the server for its config',
     'getinfo': 'Print a summary of server state',
     'groups': 'Print current session groups',
     'listbanned': "Show the list of banned IPs and hostname globs",
     'peers': 'Print information about peer servers for the same coin',
     'sessions': 'Print information about client sessions',
+    'session_ip_counts' : 'Print the total counts of sessions for each IP',
     'stop': 'Shut down the server cleanly',
 }
 

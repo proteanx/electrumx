@@ -19,7 +19,7 @@ import ssl
 import time
 from collections import defaultdict
 from functools import partial
-from ipaddress import ip_address
+from ipaddress import ip_address, IPv4Address, IPv6Address
 
 from aiorpcx import (
     RPCSession, JSONRPCAutoDetect, JSONRPCConnection,
@@ -117,6 +117,7 @@ class SessionManager(object):
         self.bp = bp
         self.daemon = daemon
         self.mempool = mempool
+        self.localhost_ips = (ip_address('127.0.0.1'), ip_address('::1'))  # IPv4 and IPv6 localhost. We use this for session IP limit logic
         self.peer_mgr = PeerManager(env, db, self)
         self.shutdown_event = shutdown_event
         self.logger = util.class_logger(__name__, self.__class__.__name__)
@@ -143,11 +144,12 @@ class SessionManager(object):
         self.ban_queue = set()
         self.ip_session_totals = defaultdict(int)
         self.max_sessions_per_ip = env.max_sessions_per_ip
+        self.max_sessions_tor = env.max_sessions_tor
 
         # Set up the RPC request handlers
-        cmds = ('add_peer banhost banip daemon_url disconnect getinfo groups '
-                'listbanned log peers query reorg sessions stop '
-                'unbanhost unbanip'.split())
+        cmds = ('add_peer banhost banip daemon_url disconnect getenv getinfo '
+                'groups listbanned log peers query reorg sessions '
+                'session_ip_counts stop unbanhost unbanip'.split())
         LocalRPC.request_handlers = {cmd: getattr(self, 'rpc_' + cmd)
                                      for cmd in cmds}
 
@@ -463,13 +465,38 @@ class SessionManager(object):
             self.logger.info("Blacklist download disabled")
             return
         self.logger.info(f"Blacklist will be downloaded every {sleeptime:0.2f} secs from URL: {URL}")
-        class BadResponse(Exception):
+        class BadResponse(RuntimeError):
             pass
-        async def fetch(client):
-            async with client.get(URL) as resp:
-                if resp.status == 200:
-                    return await resp.text()
-                raise BadResponse(f'Bad Response: {resp.status}')
+        class UnknownURLType(RuntimeError):
+            pass
+        async def get_blacklist(URL):
+            async def get_via_http(URL):
+                async def fetch(URL, client):
+                    async with client.get(URL, allow_redirects=True) as resp:
+                        if resp.status == 200:
+                            return await resp.text()
+                        raise BadResponse(f'Bad Response: {resp.status}')
+                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30.0)) as client:
+                    text = await fetch(URL, client)
+                return text
+            async def get_via_file(URL):
+                ''' Despite this function's async coloration, there is nothing
+                async about it and we just declare it as such to keep this function
+                interchangeable with get_via_http() above which *is* async '''
+                fn = URL.split(':', 1)[-1] # shop off whatever is before file:, if anything
+                while fn.startswith('/'):  # keep chopping off leading '/'
+                    fn = fn[1:]
+                fn = os.sep + fn # always absolute path
+                with open(fn, 'rt', encoding='utf-8', errors='strict') as f:
+                    text = f.read()
+                return text
+            tokens = URL.split(':', 1)
+            if len(tokens) == 1 or tokens[0].lower() in ('file',):
+                return await get_via_file(URL)
+            elif tokens[0].lower() in ('http', 'https'):
+                return await get_via_http(URL)
+            raise UnknownURLType(f"Don't know how to handle URL {URL}")
+
         def convert_from_electrumx_blacklist(bl):
             ret = {
                 'blacklist-ips' : [],
@@ -511,8 +538,7 @@ class SessionManager(object):
             t0  = time.time()
             err = True
             try:
-                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30.0)) as client:
-                    text = await fetch(client)
+                text = await get_blacklist(URL)
                 blacklist = json.loads(text)
                 bl, blh = None, None
                 if isinstance(blacklist, list):
@@ -543,9 +569,9 @@ class SessionManager(object):
                         self.logger.info("Blacklist hosts unchanged...")
                     last_blacklist_hosts = blh
                 if err:
-                    self.logger.error("No valid data found in the downloaded blacklist")
-            except (aiohttp.ClientError, BadResponse) as e:
-                self.logger.error(f"Error downloading blacklist: {repr(e)}")
+                    self.logger.error("No valid data found in the retrieved blacklist")
+            except (aiohttp.ClientError, BadResponse, UnknownURLType) as e:
+                self.logger.error(f"Error retrieving blacklist: {repr(e)}")
             except json.decoder.JSONDecodeError as e:
                 self.logger.error(f"Error decoding blacklist: {e}")
             except BaseException as e:
@@ -665,6 +691,20 @@ class SessionManager(object):
         '''Return summary information about the server process.'''
         return self._get_info()
 
+    async def rpc_getenv(self):
+        '''Return a all the env vars used to configure the server. '''
+        env = {}
+        for name in dir(self.env).copy():
+            if name.startswith('_'):
+                continue
+            value = getattr(self.env, name, None)
+            if not isinstance(value, (str, int, float, bool)):
+                continue
+            if isinstance(value, bool):
+                value = "1" if value else ""  # Map bools to non-empty/empty strings to match how they are parsed
+            env[name.upper()] = value
+        return env
+
     async def rpc_groups(self):
         '''Return statistics about the session groups.'''
         return self._group_data()
@@ -727,6 +767,10 @@ class SessionManager(object):
     async def rpc_sessions(self):
         '''Return statistics about connected sessions.'''
         return self._session_data(for_log=False)
+
+    async def rpc_session_ip_counts(self):
+        ''' Return the total counts of sessions for each IP addresses '''
+        return {str(k):v for k,v in self.ip_session_totals.copy().items() if v != 0}
 
     async def rpc_reorg(self, count):
         '''Force a reorg of the given number of blocks.
@@ -834,17 +878,54 @@ class SessionManager(object):
         for session in self.sessions:
             await session.spawn(session.notify, touched, height_changed)
 
+    def is_tor(self, ipaddr):
+        ''' Returns True iff ipaddr is the same as our Tor proxy address.
+        If there is no Tor proxy running will always return False.
+        `ipaddr' may be a Python address object or a string.
+        Always returns a bool (even on invalid param). '''
+        if not ipaddr:
+            return False
+        tor_address = self.peer_mgr.proxy_ip_address()
+        if not tor_address:
+            return False
+        if not isinstance(ipaddr, (IPv4Address, IPv6Address)):
+            try:
+                ipaddr = ip_address(ipaddr)
+            except ValueError:
+                self.logger.error(f"is_tor: Failed to parse {ipaddr} as an IP address!")
+                return False
+        return ipaddr == tor_address
+
+    def is_localhost(self, ipaddr):
+        ''' Returns true iff ipaddr is IPv4 or IPv6 'localhost'.
+        `ipaddr' may be a Python address object or a string.
+        Always returns a bool (even on invalid param). '''
+        if not isinstance(ipaddr, (IPv4Address, IPv6Address)):
+            try: ipaddr = ip_address(ipaddr)
+            except ValueError: return False
+        return ipaddr in self.localhost_ips
+
+    def _get_ipaddr_limit(self, ipaddr):
+        ''' Returns the connection limit for ipaddr. Returned value will be either
+        self.max_sessions_per_ip or self.max_sessions_tor, depending on ipaddr.
+        ipaddr may be either a string or a Python address object. Note that
+        localhost IP addresses return the max_sessions_tor limit regardless of
+        whether Tor is running or if its proxy is at localhost or not. '''
+        return (self.max_sessions_per_ip, self.max_sessions_tor)[int(bool(self.is_localhost(ipaddr) or self.is_tor(ipaddr)))]
+
     def can_add_session(self, session):
-        ''' Checks the ban list and also the max_sessions_per_ip, and returns
-        True if ok, False if limit reached or banned. '''
+        ''' Checks the ban list and also the max_sessions_per_ip and/or
+        max_sessions_tor, and returns True if ok, False if limit reached or banned. '''
         ipaddr = session.peer_ip_address()
         if ipaddr in self.banned_ips:
             return False, f'IP {ipaddr} is banned'
-        if ipaddr and self.ip_session_totals[ipaddr] >= self.max_sessions_per_ip:
-            if self.env.ban_excessive_connections and not session.is_tor():
+        if ipaddr and self.ip_session_totals[ipaddr] >= self._get_ipaddr_limit(ipaddr):
+            is_local_or_tor = bool(self.is_localhost(ipaddr) or self.is_tor(ipaddr))
+            desc = ('max_sessions_per_ip', 'max_sessions_tor')[int(is_local_or_tor)]
+            if self.env.ban_excessive_connections and not is_local_or_tor:
                 self.ban_queue.add(ipaddr)
                 self.session_event.set()
-            return False, f'IP {ipaddr} has reached max_session_per_ip ({self.max_sessions_per_ip})'
+            return False, f'IP {ipaddr} has reached the {desc} limit ({self._get_ipaddr_limit(ipaddr)})'
         return True, ''
 
     def add_session(self, session):
@@ -949,7 +1030,7 @@ class SessionBase(RPCSession):
         if cannot parse '''
         pa = self.peer_address()
         if not pa:
-            self.logger.error(f'NO IP address for {self}')
+            self.logger.warning(f'NO IP address for {self}')
             return None
         try:
             return ip_address(pa[0])
@@ -1004,9 +1085,16 @@ class SessionBase(RPCSession):
         return await coro
 
     def is_tor(self):
-        ''' Subclasses should override this '''
-        return False
+        ''' Returns True iff this session came from the same address as the
+        Tor proxy (if there is a Tor proxy), False otherwise. '''
+        my_address = self.peer_ip_address()
+        return my_address and self.session_mgr.is_tor(my_address)
 
+    def is_localhost(self):
+        ''' Returns True iff this session came from a localhost IPv4 and/or
+        IPv6 address, False otherwise. '''
+        my_address = self.peer_ip_address()
+        return my_address and self.session_mgr.is_localhost(my_address)
 
 class ElectrumX(SessionBase):
     '''A TCP server that handles incoming Electrum connections.'''
@@ -1334,15 +1422,6 @@ class ElectrumX(SessionBase):
         height: the header's height'''
         height = non_negative_integer(height)
         return await self.session_mgr.electrum_header(height)
-
-    def is_tor(self):
-        '''Try to detect if the connection is to a tor hidden service we are
-        running.'''
-        peername = self.peer_mgr.proxy_peername()
-        if not peername:
-            return False
-        peer_address = self.peer_address()
-        return peer_address and peer_address[0] == peername[0]
 
     async def replaced_banner(self, banner):
         network_info = await self.daemon_request('getnetworkinfo')

@@ -537,6 +537,19 @@ class PeerManager(object):
         None.'''
         return self.proxy.peername if self.proxy else None
 
+    def proxy_ip_address(self):
+        '''Returns the Python ip_address object of the proxy's IP, if there is
+        a proxy, otherwise None.'''
+        peername = self.proxy_peername()
+        if not peername:
+            return None
+        try:
+            ipaddr = ip_address(peername[0])
+        except ValueError:
+            self.logger.error(f"PeerManager.proxy_ip_address: Failed to parse {peername[0]} as an IP address!")
+            return None
+        return ipaddr
+
     def rpc_data(self):
         '''Peer data for the peers RPC method.'''
         self._set_peer_statuses()

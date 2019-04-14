@@ -71,6 +71,7 @@ class Env(EnvBase):
         self.max_subs = self.integer('MAX_SUBS', 1000000)
         self.max_sessions = self.sane_max_sessions()
         self.max_sessions_per_ip = self.integer('MAX_SESSIONS_PER_IP', 50)
+        self.max_sessions_tor = max(self.integer('MAX_SESSIONS_TOR', 1000), 10)  # Require at least 10 for MAX_SESSIONS_TOR
         self.max_session_subs = self.integer('MAX_SESSION_SUBS', 50000)
         self.bandwidth_limit = self.integer('BANDWIDTH_LIMIT', 8000000)
         self.session_timeout = self.integer('SESSION_TIMEOUT', 600)
