@@ -143,8 +143,6 @@ class SessionManager(object):
         self.banned_hostname_suffixes = defaultdict(str)
         self.ban_queue = set()
         self.ip_session_totals = defaultdict(int)
-        self.max_sessions_per_ip = env.max_sessions_per_ip
-        self.max_sessions_tor = env.max_sessions_tor
 
         # Set up the RPC request handlers
         cmds = ('add_peer banhost banip daemon_url disconnect getenv getinfo '
@@ -692,7 +690,7 @@ class SessionManager(object):
         return self._get_info()
 
     async def rpc_getenv(self):
-        '''Return a all the env vars used to configure the server. '''
+        '''Return all the env vars used to configure the server. '''
         env = {}
         for name in dir(self.env).copy():
             if name.startswith('_'):
@@ -907,11 +905,11 @@ class SessionManager(object):
 
     def _get_ipaddr_limit(self, ipaddr):
         ''' Returns the connection limit for ipaddr. Returned value will be either
-        self.max_sessions_per_ip or self.max_sessions_tor, depending on ipaddr.
+        self.env.max_sessions_per_ip or self.env.max_sessions_tor, depending on ipaddr.
         ipaddr may be either a string or a Python address object. Note that
         localhost IP addresses return the max_sessions_tor limit regardless of
         whether Tor is running or if its proxy is at localhost or not. '''
-        return (self.max_sessions_per_ip, self.max_sessions_tor)[int(bool(self.is_localhost(ipaddr) or self.is_tor(ipaddr)))]
+        return (self.env.max_sessions_per_ip, self.env.max_sessions_tor)[int(bool(self.is_localhost(ipaddr) or self.is_tor(ipaddr)))]
 
     def can_add_session(self, session):
         ''' Checks the ban list and also the max_sessions_per_ip and/or
