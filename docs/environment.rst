@@ -285,7 +285,7 @@ raise them.
 
   If 1 (the default), then clients exceeding :envvar:`MAX_SESSIONS_PER_IP` will
   be automatically banned. This ban is never applied to localhost clients and/or
-  to Tor clients. Defaults to 1.
+  to Tor clients. Defaults to 1. (Set to the empty string `""` to disable.)
 
 .. envvar:: MAX_SEND
 
