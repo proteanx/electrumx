@@ -22,12 +22,17 @@
 Version 1.10.0 (14 April 2019)
 ==============================
 
-* Added banip, unbanip, banhost, unbanhost and listbanned rpc commands (cculianu)
+* Added banip, unbanip, banhost, unbanhost, listbanned, getenv, and
+  session_ip_counts rpc commands (cculianu)
 * Disallow multiple servers from same IP to appear in peers (doesn't apply
   to Tor, however) (cculianu)
 * Limit client connections per IP to 50 by default (MAX_SESSIONS_PER_IP)
-  to prevent the "clients exhausting FDs on server" attack vector.
+  to prevent the "clients exhausting FDs on server" attack vector (doesn't
+  apply to Tor or localhost clients).
   (cculianu)
+* Limit client connections per IP for Tor to 1000 by default (MAX_SESSIONS_TOR)
+  Note that this limit also applies to clients coming from localhost even if
+  not using Tor. (cculianu)
 * Added blacklist.json mechanism for downloading a community maintained
   list of bad peers as an anti-phishing, anti-sybil attack measure.
   Use BLACKLIST_URL="" in env to disable, but it is recommended you leave
