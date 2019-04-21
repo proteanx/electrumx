@@ -15,13 +15,13 @@
 import os
 import sys
 sys.path.insert(0, os.path.abspath('..'))
-VERSION="ElectronX 1.10.0"
+VERSION="ElectronX 1.10.1"
 
 # -- Project information -----------------------------------------------------
 
 project = 'ElectronX'
-copyright = '2016-2018, Neil Booth'
-author = 'Neil Booth'
+copyright = '2016-2018, Neil Booth; 2019, Electron Cash LLC'
+author = 'Neil Booth & Electron Cash LLC'
 
 # The full version including branding
 release = VERSION

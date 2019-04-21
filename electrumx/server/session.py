@@ -691,17 +691,7 @@ class SessionManager(object):
 
     async def rpc_getenv(self):
         '''Return all the env vars used to configure the server. '''
-        env = {}
-        for name in dir(self.env).copy():
-            if name.startswith('_'):
-                continue
-            value = getattr(self.env, name, None)
-            if not isinstance(value, (str, int, float, bool)):
-                continue
-            if isinstance(value, bool):
-                value = "1" if value else ""  # Map bools to non-empty/empty strings to match how they are parsed
-            env[name.upper()] = value
-        return env
+        return self.env.get_info()
 
     async def rpc_groups(self):
         '''Return statistics about the session groups.'''

@@ -378,6 +378,20 @@ some of this.
   discovery is disabled and the server will only return itself in the
   peers list.
 
+.. envvar:: PEER_DISCOVERY_TOR
+
+  This environment variable is case-insensitive and defaults to
+  ``off`` (or ``0``).  It is identical to PEER_DISCOVERY except it affects
+  *.onion peers only.
+
+  The default is ``off`` because of the sybil attack vector this represents.
+
+  If ``on``, then ElectrumX will accept peers with *.onion hostnames and attempt
+  to verify them, and forward its discoveries to its peers.
+
+  If ``off`` (the default), then ElectrumX will never discover or announce any
+  *.onion peers, and will pretend they simply do not exist.
+
 .. envvar:: PEER_ANNOUNCE
 
   Set this environment variable to empty to disable announcing itself.
