@@ -64,6 +64,7 @@ class Env(EnvBase):
         self.force_proxy = self.boolean('FORCE_PROXY', False)
         self.tor_proxy_host = self.default('TOR_PROXY_HOST', 'localhost')
         self.tor_proxy_port = self.integer('TOR_PROXY_PORT', None)
+        self.peer_discovery_tor = self.peer_discovery_tor_parse()
         # The electrum client takes the empty string as unspecified
         self.donation_address = self.default('DONATION_ADDRESS', '')
         # Server limits to help prevent DoS
@@ -177,3 +178,39 @@ class Env(EnvBase):
             return self.PD_SELF
         else:
             return self.PD_ON
+
+    def peer_discovery_tor_parse(self):
+        tpd = self.default('PEER_DISCOVERY_TOR', 'off').strip().lower()  # if 'on', we forward .onion peers we hear about. otherwise off (due to sybil attack issues)
+        if tpd in ('on', 'yes', 'true', '1', 'enabled', 'enable'):
+            return True
+        return False
+
+
+    def get_info(self):
+        ''' Used by rpc_getenv to get all the env vars we are using. '''
+        env = {}
+        for name in dir(self).copy():
+            if name.startswith('_'):
+                continue
+            value = getattr(self, name, None)
+            if not isinstance(value, (str, int, float, bool)):
+                continue
+            if isinstance(value, bool):
+                value = "1" if value else ""  # Map bools to non-empty/empty strings to match how they are parsed
+            env[name.upper()] = value
+        # now mogrify some values
+        env['PEER_DISCOVERY'] = {
+            self.PD_ON : "on", self.PD_OFF : "off", self.PD_SELF : "self"
+        }.get(self.peer_discovery, 'on')
+        env['PEER_DISCOVERY_TOR'] = "on" if self.peer_discovery_tor else "off"
+        clear_id = self.clearnet_identity()
+        tor_id = self.tor_identity(clear_id)
+        if tor_id is not None:
+            env['REPORT_HOST_TOR'] = str(tor_id.host)
+            env['REPORT_TCP_PORT_TOR'] = str(tor_id.tcp_port)
+            env['REPORT_SSL_PORT_TOR'] = str(tor_id.ssl_port)
+        if clear_id is not None:
+            env['REPORT_HOST'] = str(clear_id.host)
+            env['REPORT_TCP_PORT'] = str(clear_id.tcp_port)
+            env['REPORT_SSL_PORT'] = str(clear_id.ssl_port)
+        return env

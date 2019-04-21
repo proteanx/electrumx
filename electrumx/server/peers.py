@@ -38,6 +38,9 @@ class BannedPeer(BadPeerError):
 class DupePeer(BadPeerError):
     pass
 
+class TorPeerDiscoveryDisabled(BadPeerError):
+    pass
+
 def assert_good(message, result, instance):
     if not isinstance(result, instance):
         raise BadPeerError(f'{message} returned bad result type '
@@ -121,12 +124,15 @@ class PeerManager(object):
         return my.features
 
     def _permit_new_onion_peer(self):
-        '''Accept a new onion peer only once per random time interval.'''
+        '''Accept a new onion peer only once per random time interval, and
+        only iff self.env.peer_discovery_tor is True.'''
+        if not self.env.peer_discovery_tor:
+            return False, 'tor peer discovery disabled'
         now = time.time()
         if now < self.permit_onion_peer_time:
-            return False
+            return False, 'rate limiting'
         self.permit_onion_peer_time = now + random.randrange(0, 1200)
-        return True
+        return True, 'ok'
 
     async def _import_peers(self):
         '''Import hard-coded peers from a file or the coin defaults.'''
@@ -166,7 +172,18 @@ class PeerManager(object):
         new_peers = []
         match_set = self.peers.copy()
         for peer in peers:
-            if not peer.is_public or (peer.is_tor and not self.proxy):
+            if not peer.is_public:
+                continue
+            if peer.is_tor:
+                if not self.proxy:
+                    # silently ignore tor if no tor proxy
+                    continue
+                if not self.env.peer_discovery_tor:
+                    self.logger.warning(f'refusing peer "{peer}" (tor peer discovery is disabled)')
+                    continue
+            banned_suffix = self.session_mgr.does_peer_match_hostname_ban(peer)
+            if banned_suffix:
+                self.logger.warning(f'refusing peer "{peer}" (banned: {banned_suffix})')
                 continue
 
             matches = peer.matches(match_set)
@@ -210,6 +227,10 @@ class PeerManager(object):
                 peer.retry_event.clear()
 
     async def _should_drop_peer(self, peer):
+        banned_suffix = self.session_mgr.does_peer_match_hostname_ban(peer)
+        if banned_suffix:
+            self.logger.warning(f'Peer {peer} matches banned hostname suffix {banned_suffix} (dropping)')
+            return True
         peer.try_count += 1
         is_good = False
         for kind, port, family in peer.connection_tuples():
@@ -247,6 +268,9 @@ class PeerManager(object):
             except BannedPeer as e:
                 self.logger.error(f'{peer_text} is banned: ({e})')
                 return True # It's banend, so should drop it
+            except TorPeerDiscoveryDisabled as e:
+                self.logger.error(f'{peer_text} tor discovery: ({e})')
+                return True # Cut off tor peers from the get-go
             except BadPeerError as e:
                 self.logger.error(f'{peer_text} marking bad: ({e})')
                 peer.mark_bad()
@@ -304,6 +328,8 @@ class PeerManager(object):
                 dupes = self._dupes_for_peer(peer.ip_addr)
                 if dupes:
                     raise DupePeer(f'Peer {peer} is a dupe! {len(dupes)} other peers with IP {peer.ip_addr} were found!')
+        elif not self.env.peer_discovery_tor and peer.host not in [i.host for i in self.env.identities if i.nick_suffix == '_tor']:
+            raise TorPeerDiscoveryDisabled(f'Tor peer discovery is disabled: {peer.host}')
         banned_suffix = self.session_mgr.does_peer_match_hostname_ban(peer)
         if banned_suffix:
             raise BannedPeer(f'Peer matches banned hostname suffix {banned_suffix}')
@@ -462,8 +488,7 @@ class PeerManager(object):
         peer = peers[0]
         host = peer.host
         if peer.is_tor:
-            permit = self._permit_new_onion_peer()
-            reason = 'rate limiting'
+            permit, reason = self._permit_new_onion_peer()  # check if peer_discovery_tor is enabled and also if sufficient time has passed since we added tor peers (we rate limit tor even if discovery is enabled)
         else:
             getaddrinfo = asyncio.get_event_loop().getaddrinfo
             try:
@@ -524,11 +549,14 @@ class PeerManager(object):
             random.shuffle(bucket_peers)
             peers.update(bucket_peers[:2])
 
-        # Add up to 20% onion peers (but up to 10 is OK anyway)
-        random.shuffle(onion_peers)
-        max_onion = 50 if is_tor else max(10, len(peers) // 4)
+        if self.env.peer_discovery_tor:
+            # Add up to 20% onion peers (but up to 10 is OK anyway)
+            random.shuffle(onion_peers)
+            max_onion = 50 if is_tor else max(10, len(peers) // 4)
 
-        peers.update(onion_peers[:max_onion])
+            peers.update(onion_peers[:max_onion])
+        elif onion_peers:
+            self.logger.info(f'Not forwarding {len(onion_peers)} .onion peers (tor peer discovery is disabled)')
 
         return [peer.to_tuple() for peer in peers]
 

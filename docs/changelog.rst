@@ -19,6 +19,19 @@
    we feel is too restrictive for normal BCH usage of the server.
 
 
+Version 1.10.1 (21 April 2019)
+==============================
+
+* Added PEER_DISCOVERY_TOR environment variable (default off). If on, then
+  ElectronX will behave as before this version and always forward/discover
+  *.onion peers.  If off, then it will completely ignore *.onion peers and
+  never forward them.  This policy change has been implemented because of the
+  ease with which sybil attacks are possible if PEER_DISCOVER_TOR is enabled.
+  (cculianu)
+* Added more stuff to `getenv` rpc command display (cculinau)
+* Optimized the ban handling a little bit to refuse peers earlier in the
+  lifecycle of peer_discovery if a host is banned. (cculianu)
+
 Version 1.10.0 (14 April 2019)
 ==============================
 
