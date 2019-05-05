@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import json
 from os import environ
+import sys
 
 import electrumx.lib.text as text
 
@@ -146,7 +147,7 @@ def main():
     method = args.pop('command')
 
     # aiorpcX makes this so easy...
-    async def send_request():
+    async def send_request() -> int:
         try:
             async with timeout_after(15):
                 async with Connector(RPCSession, 'localhost', port) as session:
@@ -164,12 +165,16 @@ def main():
         except OSError:
             print('cannot connect - is ElectrumX catching up, not running, or '
                   f'is {port} the wrong RPC port?')
+            return 1
         except Exception as e:
             print(f'error making request: {e!r}')
+            return 1
+        return 0
 
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(send_request())
+    exit_code = loop.run_until_complete(send_request())
 
+    sys.exit(exit_code)
 
 if __name__ == '__main__':
     main()
