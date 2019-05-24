@@ -103,7 +103,7 @@ class Prefetcher(object):
                 # some chains can be lumpy.
                 cache_room = max(self.min_cache_size // self.ave_size, 1)
                 count = min(daemon_height - self.fetched_height, cache_room)
-                count = min(100, max(count, 0))
+                count = min(10, max(count, 0))
                 if not count:
                     self.caught_up = True
                     return False
