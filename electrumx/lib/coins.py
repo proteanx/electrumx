@@ -442,6 +442,33 @@ class BitcoinSegwit(BitcoinMixin, Coin):
         return False
 
 
+class DeVault(BitcoinMixin, Coin):
+    NAME = "DeVault"
+    SHORTNAME = "DVT"
+    TX_COUNT = 29731
+    TX_COUNT_HEIGHT = 26935
+    TX_PER_BLOCK = 0.1
+    RPC_PORT = 3339
+    GENESIS_HASH = ('0000000038e62464371566f6a8d35c01'
+                    'aa54a7da351b2dbf85d92f30357f3a90')
+    PEERS = [
+        'electron.exploredvt.com s50002',
+        'electron.devault.cc s t',
+        'electrum.dvtapi.com s t',
+    ]
+
+    @classmethod
+    def upgrade_required(cls, client_ver):
+        if client_ver < (3, 3, 4):
+            return ('<br/><br/>'
+                    'Your transaction was successfully broadcast.<br/><br/>'
+                    'However, you are using a VULNERABLE version of Electron Cash.<br/>'
+                    'Download the latest version from this web site ONLY:<br/>'
+                    'https://electrondvt.org/'
+                    '<br/><br/>')
+        return False
+
+
 class BitcoinGold(EquihashMixin, BitcoinMixin, Coin):
     CHUNK_SIZE = 252
     NAME = "BitcoinGold"
