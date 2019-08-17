@@ -635,6 +635,13 @@ class BitcoinCashTestnet(BitcoinTestnetMixin, Coin):
                     '<br/><br/>')
         return False
 
+class DeVaultTestnet(BitcoinTestnetMixin, Coin):
+    '''DVT Testnet'''
+    NAME = "DeVaultTestnet"
+    PEERS = [
+        'testx.exploredvt.com t51001 s51002',
+    ]
+
 class BitcoinCashTestnetABC(BitcoinCashTestnet):
     ''' Compatibility with ElectrumX's broken naming scheme. '''
     NAME = "BitcoinCashABC"
