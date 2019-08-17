@@ -638,6 +638,10 @@ class BitcoinCashTestnet(BitcoinTestnetMixin, Coin):
 class DeVaultTestnet(BitcoinTestnetMixin, Coin):
     '''DVT Testnet'''
     NAME = "DeVaultTestnet"
+    TX_COUNT = 9551
+    TX_COUNT_HEIGHT = 9537
+    TX_PER_BLOCK = 1.1
+    RPC_PORT = 13339
     PEERS = [
         'testx.exploredvt.com t51001 s51002',
     ]
