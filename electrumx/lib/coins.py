@@ -469,6 +469,20 @@ class DeVault(BitcoinMixin, Coin):
         return False
 
 
+class DeVaultTestnet(DeVault):
+    '''DVT Testnet'''
+    NET = 'testnet'
+    TX_COUNT = 9551
+    TX_COUNT_HEIGHT = 9537
+    TX_PER_BLOCK = 1.1
+    RPC_PORT = 13339
+    GENESIS_HASH = ('00000000ed6c30b2e78a0eff7d20692c'
+                    '14099ce8eb04e205fcc08c474cfd6675')
+    PEERS = [
+        'testx.exploredvt.com t51001 s51002',
+    ]
+
+
 class BitcoinGold(EquihashMixin, BitcoinMixin, Coin):
     CHUNK_SIZE = 252
     NAME = "BitcoinGold"
@@ -635,16 +649,6 @@ class BitcoinCashTestnet(BitcoinTestnetMixin, Coin):
                     '<br/><br/>')
         return False
 
-class DeVaultTestnet(BitcoinTestnetMixin, Coin):
-    '''DVT Testnet'''
-    NAME = "DeVaultTestnet"
-    TX_COUNT = 9551
-    TX_COUNT_HEIGHT = 9537
-    TX_PER_BLOCK = 1.1
-    RPC_PORT = 13339
-    PEERS = [
-        'testx.exploredvt.com t51001 s51002',
-    ]
 
 class BitcoinCashTestnetABC(BitcoinCashTestnet):
     ''' Compatibility with ElectrumX's broken naming scheme. '''
