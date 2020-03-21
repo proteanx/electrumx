@@ -471,13 +471,14 @@ class DeVault(BitcoinMixin, Coin):
 
 class DeVaultTestnet(DeVault):
     '''DVT Testnet'''
+    SHORTNAME = "TDVT"
     NET = 'testnet'
     TX_COUNT = 9551
     TX_COUNT_HEIGHT = 9537
     TX_PER_BLOCK = 1.1
     RPC_PORT = 13339
-    GENESIS_HASH = ('00000000ed6c30b2e78a0eff7d20692c'
-                    '14099ce8eb04e205fcc08c474cfd6675')
+    GENESIS_HASH = ('000000009872b048e9d7e2ab472caea6'
+                    '26d829c3cddde3a45028ffdc7410f117')
     PEERS = [
         'testx.exploredvt.com t51001 s51002',
     ]
