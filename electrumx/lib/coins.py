@@ -452,9 +452,10 @@ class DeVault(BitcoinMixin, Coin):
     GENESIS_HASH = ('0000000038e62464371566f6a8d35c01'
                     'aa54a7da351b2dbf85d92f30357f3a90')
     PEERS = [
-        'electron.exploredvt.com s50002',
-        'electron.devault.cc s t',
-        'electrum.dvtapi.com s t',
+        'exploredvt.com s50002',
+        'delight.devault.cc s t',
+        'delight.pronodes.xyz s t',
+        'delight.proteanx.com s t'
     ]
 
     @classmethod
